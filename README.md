@@ -293,12 +293,24 @@ python3.10 lrtool.py -n Machine -g Standard -f virtual_machine -U "Authenticated
 }
 ```
 
-Main Sources: \
+## Protips:
+- If you need to export this to CSV or just want to see results in tabular format (replace @csv with @tsv), you can run this:
+```
+python3.10 lrtool.py (...) | jq -r '.[] | (.[] | keys_unsorted), (.[] | [.[]]) | @csv'
+```
+
+## TODO 
+- Windows Registry operations
+- PS/kill operations: Find if a given process is running, if so, kill it.
+- HTML5 interface using Flask and Clarity.Design
+- Simplify/remove unused options like SORT BY and REVERSE
+
+## Main Sources: 
 https://developer.carbonblack.com \
 https://carbon-black-cloud-python-sdk.readthedocs.io \
 https://github.com/carbonblack/carbon-black-cloud-sdk-python \
 https://github.com/carbonblack/carbon-black-cloud-sdk-python/blob/develop/examples/platform/list_devices.py \
 https://stackoverflow.com
 
-Special thanks: \
+## Special thanks: 
 https://github.com/j3r3mias - Everytime I got stuck in Python shenanigans, you guided me. Thanks bro.
