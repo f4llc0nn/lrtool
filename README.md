@@ -1,7 +1,7 @@
 # lrtool
 Carbon Black Cloud command line tool for querying Devices and Mass Live Response
 
-The idea of this tool is to query VMware Carbon Black Cloud (CBC) Devices filtering down (FILTERS), then print-only (PRESENTERS) or run massive commands via Live Response using multithreads (EXECUTORS).
+The idea of this tool is to query VMware Carbon Black Cloud (CBC) Devices filtering down (see `FILTERS`), then print-only (see `PRESENTERS`) or run massive commands via Live Response using multithreads (see `EXECUTORS`).
 
 This was tested in python v3.10 on a MacOS Big Sur.
 
