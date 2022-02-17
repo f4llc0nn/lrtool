@@ -24,8 +24,8 @@ def flatten(nestedlist):
     """
     Sanitize nested lists if repeating args or same arg with multiple values separated by spaces:
     e.g.: 
-    1) python3 .\masslr.py -E "netstat -an" -E "cmd.exe /c echo oi"
-    2) python3 .\masslr.py -E "netstat -an" "cmd.exe /c echo oi"
+    1) python3.10 lrtool.py -E "netstat -an" -E "cmd.exe /c echo oi"
+    2) python3.10 lrtool.py -E "netstat -an" "cmd.exe /c echo oi"
     """
     flattened = []
     for l in nestedlist:
@@ -129,7 +129,6 @@ if __name__ == "__main__":
     parser.add_argument("-g", "--policy", action="append", help="Policy Name")
     parser.add_argument("-s", "--status", action="append", help="Status of device")
     parser.add_argument("-d", "--deployment_type", action="append", help="Deployment Type")
-    #parser.add_argument("-p", "--priority", action="append", help="Target priority of device")
     parser.add_argument("-a", "--addfield", action='append', nargs='+', help="Add field(s) to output")
     parser.add_argument("-f", "--filter", action='append', nargs='+', help="Choose the field(s) to output")
     parser.add_argument("-S", "--sort_by", help="Field to sort the output by")
@@ -153,8 +152,6 @@ if __name__ == "__main__":
         devicelist = [d for d in devicelist if args.policy[0] in d.policy_name]
     if args.status:
         devicelist = devicelist.set_status(args.status)
-    #if args.priority:
-    #    devicelist = devicelist.set_target_priorities(args.priority)
     if args.sort_by:
         direction = "DESC" if args.reverse else "ASC"
         devicelist = devicelist.sort_by(args.sort_by, direction)
