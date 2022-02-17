@@ -17,7 +17,7 @@ cd lrtool
 ```
 
 ## Edit the credentials file
-More [here](https://carbon-black-cloud-python-sdk.readthedocs.io/en/latest/authentication/#with-a-file)
+More [here](https://carbon-black-cloud-python-sdk.readthedocs.io/en/latest/authentication/#with-a-file) \
 First, create the credentials file with the right permissions:
 ```
 mkdir .carbonblack
