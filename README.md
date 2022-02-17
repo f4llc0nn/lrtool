@@ -228,7 +228,7 @@ python3.10 lrtool.py -n Machine -g Standard -f virtual_machine
 
 ## Executors
 #### Example #1:
-Assynchronous execute one or more commands on all selected devices:
+Asynchronous execute one or more commands on all selected devices:
 ```
 python3.10 lrtool.py -n Machine -E "cmd.exe /c echo hello" "cmd.exe /c echo world"
 
