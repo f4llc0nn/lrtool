@@ -21,8 +21,8 @@ More [here](https://carbon-black-cloud-python-sdk.readthedocs.io/en/latest/authe
 First, create the credentials file with the right permissions:
 ```
 mkdir .carbonblack
-chmod 500 .carbonblack
 touch .carbonblack/credentials.cbc
+chmod 500 .carbonblack
 chmod 600 .carbonblack/credentials.cbc
 ```
 
