@@ -1,5 +1,5 @@
 # lrtool
-Carbon Black Cloud command line tool for querying Devices and Mass Live Response
+VMware Carbon Black Cloud command line tool for querying Devices and Mass Live Response
 
 The idea of this tool is to query VMware Carbon Black Cloud (CBC) Devices filtering down (see `FILTERS`), then print-only (see `PRESENTERS`) or run massive commands via Live Response using multithreads (see `EXECUTORS`).
 
@@ -248,7 +248,7 @@ world
 #### Example #2:
 Remotely change a given `cfg.ini` property across all selected devices:
 
-#### DISCLAIMER: DO NOT CHANGE ANYTHING IN THIS FILE IF YOU AREN'T 100% CONFIDENT. PLEASE CONSULT YOUR CARBON BLACK REPRESENTATIVE FOR QUESTIONS. This tool is shared "as is", is not official and the author DO NOT take responsabilities for your own doing.
+#### DISCLAIMER: DO NOT CHANGE ANYTHING IN THIS FILE IF YOU AREN'T 100% CONFIDENT. PLEASE CONSULT YOUR VMW CARBON BLACK REPRESENTATIVE FOR QUESTIONS. This tool is shared "as is", is not official and the author DO NOT take responsabilities if anything breaks.
 
 Also, for safety reasons only the following options are accepted by this script using simple input sanitization: 'AmsiEnabled', 'CBLR', 'AuthenticatedCLIUsers', 'ProxyServer' and 'ProxyServerCredentials'.
 
