@@ -296,7 +296,7 @@ python3.10 lrtool.py -n Machine -g Standard -f virtual_machine -U "Authenticated
 ## Protips:
 - If you need to export this to CSV or just want to see results in tabular format (replace @csv with @tsv), you can run this:
 ```
-python3.10 lrtool.py (...) | jq -r '.[] | (.[] | keys_unsorted), (.[] | [.[]]) | @csv'
+python3.10 lrtool.py (...) | jq -r '{results} | .[] | [.[]] | (.[1] | keys_unsorted), (.[] | [.[]]) | @csv'
 ```
 
 ## TODO 
@@ -305,6 +305,7 @@ python3.10 lrtool.py (...) | jq -r '.[] | (.[] | keys_unsorted), (.[] | [.[]]) |
 - HTML5 interface using Flask and Clarity.Design
 - ~Simplify/remove unused options like SORT BY and REVERSE~
 - ~Add a "device_count" field~
+- ~Option to choose a custom profile in config file~
 
 ## Main Sources: 
 https://developer.carbonblack.com \
