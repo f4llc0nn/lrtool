@@ -303,7 +303,8 @@ python3.10 lrtool.py (...) | jq -r '.[] | (.[] | keys_unsorted), (.[] | [.[]]) |
 - Windows Registry operations
 - PS/kill operations: Find if a given process is running, if so, kill it.
 - HTML5 interface using Flask and Clarity.Design
-- Simplify/remove unused options like SORT BY and REVERSE
+- ~Simplify/remove unused options like SORT BY and REVERSE~
+- ~Add a "device_count" field~
 
 ## Main Sources: 
 https://developer.carbonblack.com \
