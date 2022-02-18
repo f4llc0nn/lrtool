@@ -82,7 +82,7 @@ def massLR(devicelist, commands, customprofile, isDaemon=False):
     future_returns = []
     lock = Lock()
     platform_api = CBCloudAPI(profile=customprofile)
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
         for device in devicelist:
             out[device.id] = {}
             if now - datetime.strptime(device.last_contact_time, FORMAT) >= delta:
@@ -121,15 +121,16 @@ def massLR(devicelist, commands, customprofile, isDaemon=False):
 if __name__ == "__main__":
     parser = build_cli_parser("List devices")
     parser.add_argument("-n", "--hostname", help="Query string for looking for devices")
-    parser.add_argument("-g", "--policy", action="append", help="Policy Name")
-    parser.add_argument("-i", "--deviceids", action='append', nargs='+', help="list of device_id to execute")
+    parser.add_argument("-p", "--policy", action="append", help="Policy Name")
+    parser.add_argument("-i", "--device_id", action='append', nargs='+', help="list of device_id to execute")
     parser.add_argument("-d", "--deployment_type", action="append", help="Deployment Type")
     parser.add_argument("-s", "--status", action="append", help="Status of device")
-    parser.add_argument("-a", "--addfield", action='append', nargs='+', help="Add field(s) to output")
-    parser.add_argument("-f", "--filter", action='append', nargs='+', help="Choose the field(s) to output")
+    parser.add_argument("-f", "--if_field", action='append', nargs='+', help="If field equals value. e.g. virtual_machine=true")
+    parser.add_argument("-a", "--add_field", action='append', nargs='+', help="Add field(s) to output")
+    parser.add_argument("-o", "--only_field", action='append', nargs='+', help="Choose the field(s) to output")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
     parser.add_argument("-U", "--update_cfg", help="Update sensor config on all filtered devices")
-    parser.add_argument("-D", "--daemon", action='store_true', help="Daemon mode. JSON output")
+    parser.add_argument("-J", "--daemon", action='store_true', help="Daemon mode. JSON output")
 
     args = parser.parse_args()
     cb = get_cb_cloud_object(args)
@@ -142,19 +143,27 @@ if __name__ == "__main__":
         devicelist = devicelist.where(args.hostname)
     if args.policy:
         devicelist = [d for d in devicelist if args.policy[0] in d.policy_name]
-    if args.deviceids:
-        devicelist = [d for d in devicelist if str(d.id) in flatten(args.deviceids)]
+    if args.device_id:
+        devicelist = [d for d in devicelist if str(d.id) in flatten(args.device_id)]
     if args.deployment_type:
         devicelist = devicelist.set_deployment_type(args.deployment_type)
     if args.status:
         devicelist = devicelist.set_status(args.status)
-    
+    if args.if_field:
+        filter = flatten(args.if_field)
+        temp = []
+        for fieldvalue in filter:
+            field, value = fieldvalue.split("=")
+            temp.append([d for d in devicelist if hasattr(d, field) and getattr(d, field) == value])
+        devicelist = temp
+
+    # Initiate JSON output:
     for d in devicelist:
         output[d.id] = {
             "device_id": d.id, 
             "device_name": d.name,
         }
-        if not args.filter:
+        if not args.only_field:
             output[d.id].update({
                 "last_contact_time": d.last_contact_time,
                 "os": d.os, 
@@ -175,19 +184,21 @@ if __name__ == "__main__":
                 "uninstall_code": d.uninstall_code,
             })
 
-    if args.addfield or args.filter:
-        fields = flatten(args.addfield) if args.addfield else flatten(args.filter)
+    # Presenters:
+    if args.add_field or args.only_field:
+        fields = flatten(args.add_field) if args.add_field else flatten(args.only_field)
         for d in devicelist:
             for field in fields:
                 output[d.id].update({ field: getattr(d, field) }) if hasattr(d, field) else None
 
-    # Actions:
+    # Executors:
     if args.execute or args.update_cfg:
         if args.execute:
             merge(output, massLR(devicelist, flatten(args.execute), args.profile, args.daemon).copy())
         if args.update_cfg and sanitizeUpdateCfg(args.update_cfg):
             merge(output, massLR(devicelist, args.update_cfg, args.profile, args.daemon).copy())
 
+    # If not command-line execution or is Daemon, print JSON output:
     if args.daemon or (not args.execute and not args.update_cfg):
         if devicelist:
             print(json.dumps({"device_count": len(output), "results": output}, indent=2, sort_keys=False))
