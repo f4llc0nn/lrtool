@@ -23,9 +23,6 @@ FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 def flatten(nestedlist):
     """
     Sanitize nested lists if repeating args or same arg with multiple values separated by spaces:
-    e.g.: 
-    1) python3 .\masslr.py -E "netstat -an" -E "cmd.exe /c echo oi"
-    2) python3 .\masslr.py -E "netstat -an" "cmd.exe /c echo oi"
     """
     flattened = []
     for l in nestedlist:
