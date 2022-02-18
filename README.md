@@ -180,7 +180,7 @@ python3.10 lrtool.py -n Machine -p Standard
 
 Select devices that contains a specific value in a given field:
 ```
-python3.10 lrtool.py -n Machine -p Standard -f virtual_machine=true
+python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -f virtual_machine=true
 
 {
   "results": {
