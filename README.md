@@ -267,10 +267,10 @@ Remotely change a given `cfg.ini` property across all selected devices:
 
 Also, for safety reasons only the following options are accepted by this script using simple input sanitization: 'AmsiEnabled', 'CBLR', 'AuthenticatedCLIUsers', 'ProxyServer' and 'ProxyServerCredentials'.
 
-If you also add `-D`, it will wait for all devices to finish it's tasks and will print a JSON ready to be consumed by an application. Otherwise, it will just print every command related (eight) in every machine. The commands are numbered in order of execution and it's encoded in base64 to avoid issues with special chars.
+If you also add `-J`, it will wait for all devices to finish it's tasks and will print a JSON ready to be consumed by an application. Otherwise, it will just print every command related (eight) in every machine. The commands are numbered in order of execution and it's encoded in base64 to avoid issues with special chars.
 
 ```
-python3.10 lrtool.py -n Machine -p Standard -U "AuthenticatedCLIUsers=S-1-5-32-544" -D
+python3.10 lrtool.py -n Machine -p Standard -U "AuthenticatedCLIUsers=S-1-5-32-544" -J
 
 {
   "results": {
