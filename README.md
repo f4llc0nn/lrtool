@@ -149,7 +149,7 @@ python3.10 lrtool.py -n Server
 
 also add filter by "policy name contains":
 ```
-python3.10 lrtool.py -n Machine -g Standard
+python3.10 lrtool.py -n Machine -p Standard
 
 {
   "results": {
@@ -178,10 +178,25 @@ python3.10 lrtool.py -n Machine -g Standard
 }
 ```
 
+Select devices that contains a specific value in a given field:
+```
+python3.10 lrtool.py -n Machine -p Standard -f virtual_machine=true
+
+{
+  "results": {
+    "11111111": {
+      "device_id": 11111111,
+      "device_name": "DOMAIN\\Machine01",
+      "virtual_machine": true
+    }
+  }
+}
+```
+
 ## Presenters
 Add field to output:
 ```
-python3.10 lrtool.py -n Machine -g Standard -a virtual_machine
+python3.10 lrtool.py -n Machine -p Standard -a virtual_machine
 
 {
   "results": {
@@ -213,7 +228,7 @@ python3.10 lrtool.py -n Machine -g Standard -a virtual_machine
 
 Select fields to output (`device_id` and `device_name` will always show up):
 ```
-python3.10 lrtool.py -n Machine -g Standard -f virtual_machine
+python3.10 lrtool.py -n Machine -p Standard -o virtual_machine
 
 {
   "results": {
@@ -302,10 +317,11 @@ python3.10 lrtool.py (...) | jq -r '{results} | .[] | [.[]] | (.[1] | keys_unsor
 ## TODO 
 - Windows Registry operations
 - PS/kill operations: Find if a given process is running, if so, kill it.
-- HTML5 interface using Flask and Clarity.Design
+- User interface using Flask and VMware opensource https://clarity.design
 - ~Simplify/remove unused options like SORT BY and REVERSE~
 - ~Add a "device_count" field~
 - ~Option to choose a custom profile in config file~
+- ~Limit to max_workers=80 to avoid exausting current API limit (100)~ (Thanks to Nicholas Comeau)
 
 ## Main Sources: 
 https://developer.carbonblack.com \
