@@ -120,16 +120,16 @@ def massLR(devicelist, commands, customprofile, isDaemon=False):
 
 if __name__ == "__main__":
     parser = build_cli_parser("List devices")
-    parser.add_argument("-n", "--hostname", help="Query string for looking for devices")
+    parser.add_argument("-n", "--hostname", help="Query string for looking for device names")
     parser.add_argument("-p", "--policy", action="append", help="Policy Name")
-    parser.add_argument("-i", "--device_id", action='append', nargs='+', help="list of device_id to execute")
+    parser.add_argument("-i", "--device_id", action='append', nargs='+', help="List of device_id's")
     parser.add_argument("-d", "--deployment_type", action="append", help="Deployment Type")
     parser.add_argument("-s", "--status", action="append", help="Status of device")
     parser.add_argument("-f", "--if_field", action='append', nargs='+', help="If field equals value. e.g. virtual_machine=true")
     parser.add_argument("-a", "--add_field", action='append', nargs='+', help="Add field(s) to output")
     parser.add_argument("-o", "--only_field", action='append', nargs='+', help="Choose the field(s) to output")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
-    parser.add_argument("-U", "--update_cfg", help="Update sensor config on all filtered devices")
+    parser.add_argument("-U", "--update_cfg", help="Update sensor config file")
     parser.add_argument("-J", "--daemon", action='store_true', help="Daemon mode. JSON output")
 
     args = parser.parse_args()
