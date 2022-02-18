@@ -270,30 +270,30 @@ Also, for safety reasons only the following options are accepted by this script 
 If you also add `-D`, it will wait for all devices to finish it's tasks and will print a JSON ready to be consumed by an application. Otherwise, it will just print every command related (eight) in every machine. The commands are numbered in order of execution and it's encoded in base64 to avoid issues with special chars.
 
 ```
-python3.10 lrtool.py -n Machine -g Standard -f virtual_machine -U "AuthenticatedCLIUsers=S-1-5-32-544" -D
+python3.10 lrtool.py -n Machine -p Standard -U "AuthenticatedCLIUsers=S-1-5-32-544" -D
 
 {
   "results": {
-    "71388794": {
-      "device_id": 71388794,
-      "device_name": "SAMBARI0\\RDSSambari",
+    "11111111": {
+      "device_id": 11111111,
+      "device_name": "DOMAIN\\Machine01",
+      "last_contact_time": "2022-02-17T17:16:03.521Z",
       "os": "WINDOWS",
       "os_version": "Windows Server 2019 x64",
       "sensor_version": "3.7.0.1503",
-      "deployment_type": "WORKLOAD",
-      "policy_id": 233733,
-      "policy_name": "Monitored",
-      "current_sensor_policy_name": "Monitored",
+      "policy_id": 888888,
+      "policy_name": "Standard",
+      "current_sensor_policy_name": "Standard",
       "mac_address": "005056b816e1",
-      "last_internal_ip_address": "10.92.239.81",
-      "last_external_ip_address": "66.170.99.2",
-      "last_contact_time": "2022-02-17T17:45:51.209Z",
+      "last_internal_ip_address": "10.10.10.1",
+      "last_external_ip_address": "200.200.200.200",
       "scan_status": null,
       "passive_mode": false,
       "quarantined": false,
       "vulnerability_score": 5.1,
       "vulnerability_severity": "MODERATE",
-      "uninstall_code": "931HDEGF",
+      "deployment_type": "WORKLOAD",
+      "uninstall_code": "U1234567"
       "live_response": {
         "0": {
           "IkM6XFByb2dyYW0gRmlsZXNcQ29uZmVyXHJlcGNsaS5leGUiIGJ5cGFzcyAx": "U2Vuc29yIGlzIGluIGJ5cGFzcyBtb2RlDQo="
