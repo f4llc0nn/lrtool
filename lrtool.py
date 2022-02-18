@@ -24,8 +24,8 @@ def flatten(nestedlist):
     """
     Sanitize nested lists if repeating args or same arg with multiple values separated by spaces:
     e.g.: 
-    1) python3.10 lrtool.py -E "netstat -an" -E "cmd.exe /c echo oi"
-    2) python3.10 lrtool.py -E "netstat -an" "cmd.exe /c echo oi"
+    1) python3 .\masslr.py -E "netstat -an" -E "cmd.exe /c echo oi"
+    2) python3 .\masslr.py -E "netstat -an" "cmd.exe /c echo oi"
     """
     flattened = []
     for l in nestedlist:
@@ -57,41 +57,40 @@ def sanitizeUpdateCfg(keyvalue):
     else:
         return False
 
-def sendLRCommands(lr_session, commands, l, isDaemon=False):
-    device_out = { lr_session.device_id: { "live_response": {} } }
+def sendLRCommands(api, device_id, commands, l, isDaemon=False):
+    lr_session = api.live_response.request_session(device_id)
+    device_out = { device_id: { "live_response": {} } }
     count = 0
     for command in commands:
         cmd_output = lr_session.create_process(r'%s' %command, wait_for_completion=True, wait_for_output=True)
-        device_out[lr_session.device_id]["live_response"][count] = { base64.b64encode(command.encode('ascii')).decode('ascii'): 
+        device_out[device_id]["live_response"][count] = { base64.b64encode(command.encode('ascii')).decode('ascii'): 
             base64.b64encode(cmd_output).decode('ascii')
         }
         count += 1
         if not isDaemon:
             l.acquire()
             try:
-                print(r'%s| %s' % (lr_session.device_id, command) +'\n'+cmd_output.decode('ascii'))
+                print(r'%s| %s' % (device_id, command) +'\n'+cmd_output.decode('ascii'))
             finally:
                 l.release()
 
     lr_session.close()
     return device_out
 
-def massLR(devicelist, commands, isDaemon=False):
+def massLR(devicelist, commands, customprofile, isDaemon=False):
     now = datetime.utcnow()
     delta = timedelta(minutes=10)
 
     out = {}
     future_returns = []
-    lr_sessions = {}
     lock = Lock()
-    platform_api = CBCloudAPI(profile="default")
+    platform_api = CBCloudAPI(profile=customprofile)
     with concurrent.futures.ThreadPoolExecutor() as executor:
         for device in devicelist:
             out[device.id] = {}
             if now - datetime.strptime(device.last_contact_time, FORMAT) >= delta:
                 out[device.id]["live_response"] = "OFFLINE"
             else:
-                lr_sessions[device.id] = platform_api.live_response.request_session(device.id)
                 if not isinstance(commands, list):
                     backupfilename = r'cfg-bkp-%s.ini' %hashlib.md5(str(random.randrange(100000,999999)).encode()).hexdigest()
                     version = float(device.sensor_version.split(".")[0] + "." + d.sensor_version.split(".")[1])
@@ -109,12 +108,12 @@ def massLR(devicelist, commands, isDaemon=False):
                         r'cmd.exe /c "type %s\cfg.ini"' % (cfgdir),
                     ]
                     try:
-                        future_returns.append(executor.submit(sendLRCommands,lr_sessions[device.id], cmds, lock, isDaemon))
+                        future_returns.append(executor.submit(sendLRCommands,platform_api, device.id, cmds, lock, isDaemon))
                     except:
                         out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
                 else:
                     try:
-                        future_returns.append(executor.submit(sendLRCommands,lr_sessions[device.id], commands, lock, isDaemon))
+                        future_returns.append(executor.submit(sendLRCommands,platform_api, device.id, commands, lock, isDaemon))
                     except:
                         out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
 
@@ -125,14 +124,12 @@ def massLR(devicelist, commands, isDaemon=False):
 if __name__ == "__main__":
     parser = build_cli_parser("List devices")
     parser.add_argument("-n", "--hostname", help="Query string for looking for devices")
-    parser.add_argument("-i", "--deviceids", action='append', nargs='+', help="list of device_id to execute")
     parser.add_argument("-g", "--policy", action="append", help="Policy Name")
-    parser.add_argument("-s", "--status", action="append", help="Status of device")
+    parser.add_argument("-i", "--deviceids", action='append', nargs='+', help="list of device_id to execute")
     parser.add_argument("-d", "--deployment_type", action="append", help="Deployment Type")
+    parser.add_argument("-s", "--status", action="append", help="Status of device")
     parser.add_argument("-a", "--addfield", action='append', nargs='+', help="Add field(s) to output")
     parser.add_argument("-f", "--filter", action='append', nargs='+', help="Choose the field(s) to output")
-    parser.add_argument("-S", "--sort_by", help="Field to sort the output by")
-    parser.add_argument("-R", "--reverse", action="store_true", help="Reverse order of sort")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
     parser.add_argument("-U", "--update_cfg", help="Update sensor config on all filtered devices")
     parser.add_argument("-D", "--daemon", action='store_true', help="Daemon mode. JSON output")
@@ -144,25 +141,24 @@ if __name__ == "__main__":
     output = {}
 
     # Filters:
-    if args.deviceids:
-        devicelist = [d for d in devicelist if str(d.id) in flatten(args.deviceids)]
     if args.hostname:
         devicelist = devicelist.where(args.hostname)
     if args.policy:
         devicelist = [d for d in devicelist if args.policy[0] in d.policy_name]
-    if args.status:
-        devicelist = devicelist.set_status(args.status)
-    if args.sort_by:
-        direction = "DESC" if args.reverse else "ASC"
-        devicelist = devicelist.sort_by(args.sort_by, direction)
+    if args.deviceids:
+        devicelist = [d for d in devicelist if str(d.id) in flatten(args.deviceids)]
     if args.deployment_type:
         devicelist = devicelist.set_deployment_type(args.deployment_type)
+    if args.status:
+        devicelist = devicelist.set_status(args.status)
     
-    if not args.filter:
-        for d in devicelist:
-            output[d.id] = {
-                "device_id": d.id, 
-                "device_name": d.name,
+    for d in devicelist:
+        output[d.id] = {
+            "device_id": d.id, 
+            "device_name": d.name,
+        }
+        if not args.filter:
+            output[d.id].update({
                 "last_contact_time": d.last_contact_time,
                 "os": d.os, 
                 "os_version": d.os_version,
@@ -180,27 +176,23 @@ if __name__ == "__main__":
                 "vulnerability_severity": d.vulnerability_severity,
                 "deployment_type": d.deployment_type,
                 "uninstall_code": d.uninstall_code,
-            }
+            })
+
     if args.addfield or args.filter:
         fields = flatten(args.addfield) if args.addfield else flatten(args.filter)
         for d in devicelist:
-            if args.filter:
-                output[d.id] = {
-                    "device_id": d.id, 
-                    "device_name": d.name,
-                }
             for field in fields:
                 output[d.id].update({ field: getattr(d, field) }) if hasattr(d, field) else None
 
     # Actions:
     if args.execute or args.update_cfg:
         if args.execute:
-            merge(output, massLR(devicelist, flatten(args.execute), args.daemon).copy())
+            merge(output, massLR(devicelist, flatten(args.execute), args.profile, args.daemon).copy())
         if args.update_cfg and sanitizeUpdateCfg(args.update_cfg):
-            merge(output, massLR(devicelist, args.update_cfg, args.daemon).copy())
+            merge(output, massLR(devicelist, args.update_cfg, args.profile, args.daemon).copy())
 
     if args.daemon or (not args.execute and not args.update_cfg):
         if devicelist:
-            print(json.dumps({"results": output}, indent=2, sort_keys=False))
+            print(json.dumps({"device_count": len(output), "results": output}, indent=2, sort_keys=False))
         else:
-            print(json.dumps({"results": None}, indent=2, sort_keys=False))
+            print(json.dumps({"device_count": 0, "results": None}, indent=2, sort_keys=False))
