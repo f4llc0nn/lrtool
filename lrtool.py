@@ -11,7 +11,7 @@
 # * NON-INFRINGEMENT AND FITNESS FOR A PARTICULAR PURPOSE.
 
 from mergedeep import merge
-import json, hashlib, random, base64, re
+import json, hashlib, random, base64, re, sys
 import concurrent.futures
 from threading import Lock
 from cbc_sdk.helpers import build_cli_parser, get_cb_cloud_object
@@ -54,23 +54,40 @@ def sanitizeUpdateCfg(keyvalue):
     else:
         return False
 
-def sendLRCommands(api, device_id, commands, l, isDaemon=False):
-    lr_session = api.live_response.request_session(device_id)
-    device_out = { device_id: { "live_response": {} } }
+def sendLRCommands(api, device, commands, l, isDaemon=False, upd_cfg=False):
+    lr_session = api.live_response.request_session(device.id)
+    device_out = { device.id: { "live_response": {} } }
     count = 0
-    for command in commands:
-        cmd_output = lr_session.create_process(r'%s' %command, wait_for_completion=True, wait_for_output=True)
-        device_out[device_id]["live_response"][count] = { base64.b64encode(command.encode('ascii')).decode('ascii'): 
-            base64.b64encode(cmd_output).decode('ascii')
-        }
-        count += 1
-        if not isDaemon:
-            l.acquire()
-            try:
-                print(r'%s| %s' % (device_id, command) +'\n'+cmd_output.decode('ascii'))
-            finally:
-                l.release()
 
+    if upd_cfg:
+        count = 0
+        for command in commands:
+            lr_session.create_process(r'%s' %command, wait_for_completion=True, wait_for_output=True)
+            count += 1
+            if count == 8:
+                cmd_output = lr_session.create_process(r'%s' %command, wait_for_completion=True, wait_for_output=True).decode('ascii')
+                device_out[device.id]["live_response"]["config_update"] = True if "True" in cmd_output else False
+                if not isDaemon:
+                    l.acquire()
+                    try:
+                        cmd_return = "succeeded." if "True" in cmd_output else "has failed."
+                        print(r'%s | %s | Config Update %s' % (device.id, device.name, cmd_return))
+                    finally:
+                        l.release()
+    else:
+        for command in commands:
+            cmd_output = lr_session.create_process(r'%s' %command, wait_for_completion=True, wait_for_output=True)
+            device_out[device.id]["live_response"][count] = { base64.b64encode(command.encode('ascii')).decode('ascii'): 
+                base64.b64encode(cmd_output).decode('ascii')
+            }
+            count += 1
+            if not isDaemon:
+                l.acquire()
+                try:
+                    print(r'%s | %s | %s' % (device.id, device.name, command) +'\n'+cmd_output.decode('ascii'))
+                finally:
+                    l.release()
+        
     lr_session.close()
     return device_out
 
@@ -102,15 +119,15 @@ def massLR(devicelist, commands, customprofile, isDaemon=False):
                         r'powershell.exe Add-Content %s\cfg.ini "%s"' % (cfgdir, args.update_cfg),
                         r'"C:\Program Files\Confer\repcli.exe" updateconfig',
                         r'"C:\Program Files\Confer\repcli.exe" bypass 0',
-                        r'cmd.exe /c "type %s\cfg.ini"' % (cfgdir),
+                        r'powershell.exe Get-Content %s\cfg.ini | Select-String -Pattern %s -quiet' % (cfgdir, args.update_cfg)
                     ]
                     try:
-                        future_returns.append(executor.submit(sendLRCommands,platform_api, device.id, cmds, lock, isDaemon))
+                        future_returns.append(executor.submit(sendLRCommands,platform_api, device, cmds, lock, isDaemon, upd_cfg=True))
                     except:
                         out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
                 else:
                     try:
-                        future_returns.append(executor.submit(sendLRCommands,platform_api, device.id, commands, lock, isDaemon))
+                        future_returns.append(executor.submit(sendLRCommands,platform_api, device, commands, lock, isDaemon))
                     except:
                         out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
 
@@ -125,7 +142,8 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--device_id", action='append', nargs='+', help="List of device_id's")
     parser.add_argument("-d", "--deployment_type", action="append", help="Deployment Type")
     parser.add_argument("-s", "--status", action="append", help="Status of device")
-    parser.add_argument("-f", "--if_field", action='append', nargs='+', help="If field equals value. e.g. virtual_machine=true")
+    # BROKEN:
+    # parser.add_argument("-f", "--if_field", action='append', nargs='+', help="If field equals value. e.g. virtual_machine=true")
     parser.add_argument("-a", "--add_field", action='append', nargs='+', help="Add field(s) to output")
     parser.add_argument("-o", "--only_field", action='append', nargs='+', help="Choose the field(s) to output")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
@@ -149,40 +167,46 @@ if __name__ == "__main__":
         devicelist = devicelist.set_deployment_type(args.deployment_type)
     if args.status:
         devicelist = devicelist.set_status(args.status)
+    ''' BROKEN:
     if args.if_field:
-        filter = flatten(args.if_field)
-        temp = []
-        for fieldvalue in filter:
-            field, value = fieldvalue.split("=")
-            temp.append([d for d in devicelist if hasattr(d, field) and getattr(d, field) == value])
-        devicelist = temp
+            filter = flatten(args.if_field)
+            temp = []
+            for fieldvalue in filter:
+                field, value = fieldvalue.split("=")
+                temp.append([d for d in devicelist if hasattr(d, field) and getattr(d, field) == value])
+            devicelist = temp
+    '''
 
     # Initiate JSON output:
-    for d in devicelist:
-        output[d.id] = {
-            "device_id": d.id, 
-            "device_name": d.name,
-        }
-        if not args.only_field:
-            output[d.id].update({
-                "last_contact_time": d.last_contact_time,
-                "os": d.os, 
-                "os_version": d.os_version,
-                "sensor_version": d.sensor_version,
-                "policy_id": d.policy_id,
-                "policy_name": d.policy_name,
-                "current_sensor_policy_name": d.current_sensor_policy_name,
-                "mac_address": d.mac_address,
-                "last_internal_ip_address": d.last_internal_ip_address,
-                "last_external_ip_address": d.last_external_ip_address,
-                "scan_status": d.scan_status,
-                "passive_mode": d.passive_mode,
-                "quarantined": d.quarantined,
-                "vulnerability_score": d.vulnerability_score,
-                "vulnerability_severity": d.vulnerability_severity,
-                "deployment_type": d.deployment_type,
-                "uninstall_code": d.uninstall_code,
-            })
+    if devicelist:
+        for d in devicelist:
+            output[d.id] = {
+                "device_id": d.id, 
+                "device_name": d.name,
+            }
+            if not args.only_field:
+                output[d.id].update({
+                    "last_contact_time": d.last_contact_time,
+                    "os": d.os, 
+                    "os_version": d.os_version,
+                    "sensor_version": d.sensor_version,
+                    "policy_id": d.policy_id,
+                    "policy_name": d.policy_name,
+                    "current_sensor_policy_name": d.current_sensor_policy_name,
+                    "mac_address": d.mac_address,
+                    "last_internal_ip_address": d.last_internal_ip_address,
+                    "last_external_ip_address": d.last_external_ip_address,
+                    "scan_status": d.scan_status,
+                    "passive_mode": d.passive_mode,
+                    "quarantined": d.quarantined,
+                    "vulnerability_score": d.vulnerability_score,
+                    "vulnerability_severity": d.vulnerability_severity,
+                    "deployment_type": d.deployment_type,
+                    "uninstall_code": d.uninstall_code,
+                })
+    else:
+        print(json.dumps({"device_count": 0, "results": None}, indent=2, sort_keys=False))
+        sys.exit()
 
     # Presenters:
     if args.add_field or args.only_field:
@@ -202,5 +226,3 @@ if __name__ == "__main__":
     if args.daemon or (not args.execute and not args.update_cfg):
         if devicelist:
             print(json.dumps({"device_count": len(output), "results": output}, indent=2, sort_keys=False))
-        else:
-            print(json.dumps({"device_count": 0, "results": None}, indent=2, sort_keys=False))
