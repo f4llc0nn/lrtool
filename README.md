@@ -17,7 +17,6 @@ cd lrtool
 ```
 
 ## Edit the credentials file
-More [here](https://carbon-black-cloud-python-sdk.readthedocs.io/en/latest/authentication/#with-a-file) \
 First, create the credentials file with the right permissions:
 ```
 mkdir .carbonblack
@@ -43,6 +42,7 @@ url=https://defense-prod06.conferdeploy.net
 token=XXXXXXXXXXXXXXXXXXXXXXXX/YYYYYYYYYY
 org_key=ZZZZZZZZ
 ```
+More [here](https://carbon-black-cloud-python-sdk.readthedocs.io/en/latest/authentication/#with-a-file)
 
 ## Sample Filters
 No filters (all devices with default fields)
@@ -116,9 +116,9 @@ python3.10 lrtool.py
     },
 ```
 
-filter by "device name contains":
+filter by "device name contains" and use different profile ("default" if omitted):
 ```
-python3.10 lrtool.py -n Server
+python3.10 lrtool.py --profile test -n Server
 
 {
   "results": {
@@ -173,21 +173,6 @@ python3.10 lrtool.py -n Machine -p Standard
       "vulnerability_severity": "MODERATE",
       "deployment_type": "WORKLOAD",
       "uninstall_code": "U1234567"
-    }
-  }
-}
-```
-
-Select devices that contains a specific value in a given field:
-```
-python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -f virtual_machine=true
-
-{
-  "results": {
-    "11111111": {
-      "device_id": 11111111,
-      "device_name": "DOMAIN\\Machine01",
-      "virtual_machine": true
     }
   }
 }
@@ -267,10 +252,10 @@ Remotely change a given `cfg.ini` property across all selected devices:
 
 Also, for safety reasons only the following options are accepted by this script using simple input sanitization: 'AmsiEnabled', 'CBLR', 'AuthenticatedCLIUsers', 'ProxyServer' and 'ProxyServerCredentials'.
 
-If you also add `-J`, it will wait for all devices to finish it's tasks and will print a JSON ready to be consumed by an application. Otherwise, it will just print every command related (eight) in every machine. The commands are numbered in order of execution and it's encoded in base64 to avoid issues with special chars.
+If you also add `-D`, it will wait for all devices to finish it's tasks and will print a JSON ready to be consumed by an application. Otherwise, it will just print every command related (eight) in every machine. The commands are numbered in order of execution and it's encoded in base64 to avoid issues with special chars.
 
 ```
-python3.10 lrtool.py -n Machine -p Standard -U "AuthenticatedCLIUsers=S-1-5-32-544" -J
+python3.10 lrtool.py -n Machine -p Standard -U "AuthenticatedCLIUsers=S-1-5-32-544" -D
 
 {
   "results": {
@@ -318,6 +303,7 @@ python3.10 lrtool.py (...) | jq -r '{results} | .[] | [.[]] | (.[1] | keys_unsor
 - Windows Registry operations
 - PS/kill operations: Find if a given process is running, if so, kill it.
 - User interface using Flask and VMware opensource https://clarity.design
+- Filter by property value, e.g. If `virtual_machine=true`
 - ~Simplify/remove unused options like SORT BY and REVERSE~
 - ~Add a "device_count" field~
 - ~Option to choose a custom profile in config file~
