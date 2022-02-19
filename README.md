@@ -300,14 +300,14 @@ python3.10 lrtool.py (...) | jq -r '{results} | .[] | [.[]] | (.[1] | keys_unsor
 ```
 
 ## TODO 
-- Windows Registry operations
-- PS/kill operations: Find if a given process is running, if so, kill it.
-- User interface using Flask and VMware opensource https://clarity.design
-- Filter by property value, e.g. If `virtual_machine=true`
 - ~Simplify/remove unused options like SORT BY and REVERSE~
 - ~Add a "device_count" field~
 - ~Option to choose a custom profile in config file~
 - ~Limit to max_workers=80 to avoid exausting current API limit (100)~ (Thanks to Nicholas Comeau)
+- Filter by property value, e.g. If `virtual_machine=true`
+- PS/kill operations: Find if a given process is running, if so, kill it.
+- Windows Registry operations
+- User interface using Flask and VMware opensource https://clarity.design
 
 ## Main Sources: 
 https://developer.carbonblack.com \
