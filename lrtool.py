@@ -148,7 +148,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--only_field", action='append', nargs='+', help="Choose the field(s) to output")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
     parser.add_argument("-U", "--update_cfg", help="Update sensor config file")
-    parser.add_argument("-J", "--daemon", action='store_true', help="Daemon mode. JSON output")
+    parser.add_argument("-D", "--daemon", action='store_true', help="Daemon mode. JSON output")
 
     args = parser.parse_args()
     cb = get_cb_cloud_object(args)
