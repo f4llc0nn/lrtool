@@ -5,6 +5,13 @@ The idea of this tool is to query VMware Carbon Black Cloud (CBC) Devices filter
 
 This was tested in python v3.10 on a MacOS Big Sur.
 
+## Current Features
+- Filter devices based on a number of criteria or file list with device_ids (one per line).
+- Find processes by name/path contains or cmdline contains, optionally kill it.
+- Execute commands across all selected/filtered devices. Can let it running after the session (persistence).
+- Change a [property from cfg.ini](https://docs.vmware.com/en/VMware-Carbon-Black-Cloud/services/cbc-sensor-installation-guide/GUID-0FBA8BFB-8E3D-42FB-A589-8E31B184591B.html) (**EXPERIMENTAL, DANGEROUS, UNSUPPORTED and HIGH RISK OF BREAKING THINGS - CONSULT YOUR VMW REPRESENTATIVE**)
+- Option to output in JSON, to use the tool as a backend application supplying a webserver.
+
 ## Install Requirements
 ```
 python3.10 -m pip install carbon-black-cloud-sdk
@@ -44,8 +51,35 @@ org_key=ZZZZZZZZ
 ```
 More [here](https://carbon-black-cloud-python-sdk.readthedocs.io/en/latest/authentication/#with-a-file)
 
+## Current Options:
+
+Legend:
+```
+C.I.: Case Insensitive
+S.M.: Support Multiple Ocurrences
+```
+
+| Param |          Description           | C.I | S.M |
+| ----- | ------------------------------ | --- | --- |
+| `-n`  | device_name or part of         |  X  |     |
+| `-p`  | policy_name or part of         |  X  |     |
+| `-i`  | device with provided device_id |     |  X  |
+| `-f`  | match devices if field=value   |  X  |  X  |
+| `-a`  | add selected field to output   |  X  |  X  |
+| `-o`  | only output selected field     |  X  |  X  |
+| `-s`  | toggle for simpler output      |     |     |
+| `-F`  | find process across devices    |  X  |  X  |
+| `-K`  | toggle to kill -F processes    |     |     |
+| `-E`  | command to run on devices      |     |  X  |
+| `-P`  | toggle to persist -E processes |     |     |
+| `-U`  | update sensor cfg file         |     |     |
+| `-D`  | toggle to print output in JSON |     |     |
+
+
 ## Sample Filters
-No filters (all devices with default fields)
+<details>
+  <summary>No filters (all devices with default fields)</summary>
+
 ```
 python3.10 lrtool.py
 
@@ -115,9 +149,11 @@ python3.10 lrtool.py
       "deployment_type": "WORKLOAD",
       "uninstall_code": "U3456789"
     },
-```
+``` 
+</details>
+<details>
+  <summary>By "device name contains" and use different profile ("default" if omitted):</summary>
 
-filter by "device name contains" and use different profile ("default" if omitted):
 ```
 python3.10 lrtool.py --profile test -n Server
 
@@ -148,8 +184,10 @@ python3.10 lrtool.py --profile test -n Server
   }
 }
 ```
-
-also add filter by "policy name contains":
+</details>
+<details>
+  <summary>By "policy name contains":</summary>
+  
 ```
 python3.10 lrtool.py -n Machine -p Standard
 
@@ -180,8 +218,10 @@ python3.10 lrtool.py -n Machine -p Standard
   }
 }
 ```
+</details>
+<details>
+  <summary>By property value (=:equals, ~:contains)</summary>
 
-It's possible to also filter by property value (=:equals, ~:contains)
 ```
 #python3.10 lrtool.py -n Machine -p Standard -f "os~WIND"
 python3.10 lrtool.py -n Machine -p Standard -f os=WINDOWS
@@ -213,9 +253,48 @@ python3.10 lrtool.py -n Machine -p Standard -f os=WINDOWS
   }
 }
 ```
+</details>
+<details>
+  <summary>By list of device_ids in a file (one device_id per line):</summary>
+
+```
+cat "/path/to/file"
+11111111
+
+python3.10 lrtool.py -Di "@/path/to/file"
+{
+  "device_count": 1,
+  "results": {
+    "11111111": {
+      "device_id": 11111111,
+      "device_name": "DOMAIN\\Machine01",
+      "last_contact_time": "2022-02-17T17:16:03.521Z",
+      "os": "WINDOWS",
+      "os_version": "Windows Server 2019 x64",
+      "sensor_version": "3.7.0.1503",
+      "policy_id": 888888,
+      "policy_name": "Standard",
+      "current_sensor_policy_name": "Standard",
+      "mac_address": "005056b816e1",
+      "last_internal_ip_address": "10.10.10.1",
+      "last_external_ip_address": "200.200.200.200",
+      "scan_status": null,
+      "passive_mode": false,
+      "quarantined": false,
+      "vulnerability_score": 5.1,
+      "vulnerability_severity": "MODERATE",
+      "deployment_type": "WORKLOAD",
+      "uninstall_code": "U1234567"
+    }
+  }
+}
+```
+</details>
 
 ## Presenters
-Add field to output:
+<details>
+  <summary>Add field to output:</summary>
+
 ```
 python3.10 lrtool.py -n Machine -p Standard -a virtual_machine
 
@@ -247,8 +326,10 @@ python3.10 lrtool.py -n Machine -p Standard -a virtual_machine
   }
 }
 ```
+</details>
+<details>
+  <summary>Select fields to output (`device_id` and `device_name` will always show up):</summary>
 
-Select fields to output (`device_id` and `device_name` will always show up):
 ```
 python3.10 lrtool.py -n Machine -p Standard -o virtual_machine
 
@@ -263,10 +344,13 @@ python3.10 lrtool.py -n Machine -p Standard -o virtual_machine
   }
 }
 ```
+</details>
 
 ## Executors
-#### Example #1:
-Asynchronous execute one or more commands on all selected devices:
+#### Execute command(s):
+<details>
+  <summary>Asynchronous execute one or more commands on all selected devices:</summary>
+
 ```
 #python3.10 lrtool.py -n Machine -E "cmd.exe /c echo hello" -E "cmd.exe /c echo world"  # Multiple "-E"
 python3.10 lrtool.py -n Machine -E "cmd.exe /c echo hello" "cmd.exe /c echo world"      # Single "-E"
@@ -283,48 +367,90 @@ world
 11111111| cmd.exe /c echo world
 world
 ```
+</details>
+<details>
+  <summary>Execute and keep it running in background:</summary>
 
-#### Example #2:
-Asynchronous execute one or more commands on all selected devices and print JSON output.
-Command and output are in base64 to avoid issues with special chars:
 ```
-python3.10 lrtool.py -n Machine -o virtual_machine -E "cmd.exe /c echo hello" -D
+python3.10 lrtool.py -p Standard -PE "cmd.exe /c ping 1.1.1.1 -t"
+11111111|DOMAIN\Machine01 ❯ "cmd.exe /c ping 1.1.1.1 -t": RUNNING_ON_BACKGROUND
+```
+</details>
 
+
+#### Find and Kill processes:
+<details>
+  <summary>Find all devices that have "ping" in a process_name or process_path:</summary>
+
+```
+python3.10 lrtool.py -p Standard -PE "cmd.exe /c ping 1.1.1.1 -t"
+11111111|DOMAIN\Machine01 ❯ "cmd.exe /c ping 1.1.1.1 -t": RUNNING_ON_BACKGROUND
+
+python3.10 lrtool.py -p Standard -F "ping"
+11111111|DOMAIN\Machine01 ❯ "ping": FOUND (PID: 7680)
+11111111|DOMAIN\Machine01 ❯ "ping": FOUND (PID: 1408)
+
+python3.10 lrtool.py -p Standard -DsF "ping"
 {
-  "device_count": 2,
+  "device_count": 1,
   "results": {
     "11111111": {
       "device_id": 11111111,
       "device_name": "DOMAIN\\Machine01",
-      "virtual_machine": true,
       "live_response": {
-        "0": {
-          "Y21kLmV4ZSAvYyBlY2hvIGhlbGxv": "aGVsbG8NCg=="
-        }
-      }
-    },
-    "22222222": {
-      "device_id": 22222222,
-      "device_name": "DOMAIN\\Machine02",
-      "virtual_machine": true,
-      "live_response": {
-        "0": {
-          "Y21kLmV4ZSAvYyBlY2hvIGhlbGxv": "aGVsbG8NCg=="
+        "find_processes": {
+          "ping": {
+            "status": "FOUND",
+            "matches_count": 2,
+            "matches_pid": [
+              7680,
+              1408
+            ],
+            "matches_details": {
+              "7680": {
+                "process_pid": 7680,
+                "process_path": "c:\\windows\\system32\\cmd.exe",
+                "process_cmdline": "cmd.exe /c ping 1.1.1.1 -t",
+                "sid": "S-1-5-18",
+                "process_username": "NT AUTHORITY\\SYSTEM",
+                "parent_pid": 11488,
+                "parent_create_time": 1645578703,
+                "process_create_time": 1645578.0
+              },
+              "1408": {
+                "process_pid": 1408,
+                "process_path": "c:\\windows\\system32\\ping.exe",
+                "process_cmdline": "ping  1.1.1.1 -t",
+                "sid": "S-1-5-18",
+                "process_username": "NT AUTHORITY\\SYSTEM",
+                "parent_pid": 7680,
+                "parent_create_time": 1645578704,
+                "process_create_time": 1645578.0
+              }
+            }
+          }
         }
       }
     }
   }
 }
-```
 
-#### Example #3:
+python3.10 lrtool.py -p Standard -KF "ping"
+11111111|DOMAIN\Machine01 ❯ "ping": KILLED (PID: 7680)
+11111111|DOMAIN\Machine01 ❯ "ping": KILLED (PID: 1408)
+```
+</details>
+
+#### Update cfg.ini in all selected devices:
 Remotely change a given `cfg.ini` property across all selected devices:
 
 #### DISCLAIMER: DO NOT CHANGE ANYTHING IN THIS FILE IF YOU AREN'T 100% CONFIDENT. PLEASE CONSULT YOUR VMW CARBON BLACK REPRESENTATIVE FOR QUESTIONS. This tool is shared "as is", is not official and the author DO NOT take responsabilities if anything breaks.
 
 Also, for safety reasons only the following options are accepted by this script using simple input sanitization: 'AmsiEnabled', 'CBLR', 'AuthenticatedCLIUsers', 'ProxyServer' and 'ProxyServerCredentials'.
 
-Option A) Regular output:
+<details>
+  <summary>Option A) Regular output:</summary>
+
 ```
 python3.10 lrtool.py -n Machine -o virtual_machine -U "AuthenticatedCLIUsers=S-1-5-32-544"
 
@@ -332,8 +458,10 @@ ID         Hostname                       Cfg Update
 11111111   DOMAIN\\Machine01              Success   
 22222222   DOMAIN\\Machine02              Success
 ```
+</details>
+<details>
+  <summary>Option B) JSON output:</summary>
 
-Option B) JSON output:
 ```
 python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -U "AuthenticatedCLIUsers=S-1-5-32-544" -D
 
@@ -351,6 +479,43 @@ python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -U "Authenticated
   }
 }
 ```
+</details>
+
+### More advanced samples:
+<details>
+  <summary>Combine Toggle options:</summary>
+
+```
+python3.10 lrtool.py -Dp Standard -o policy_id policy_name
+
+{
+  "device_count": 1,
+  "results": {
+    "11111111": {
+      "device_id": 11111111,
+      "device_name": "DOMAIN\\Machine01",
+      "virtual_machine": true
+    }
+  }
+}
+```
+</details>
+<details>
+  <summary>Read a list of commands in a file:</summary>
+
+```
+cat "/path/to/file"
+cmd.exe /c echo hello
+cmd.exe /c echo world
+  
+python3.10 lrtool.py -o id -E "@/path/to/file"
+11111111|DOMAIN\Machine01 ❯ cmd.exe /c echo hello
+hello
+
+11111111|DOMAIN\Machine01 ❯ cmd.exe /c echo world
+world
+```
+</details>
 
 ## Protips:
 - If you need to export this to CSV or just want to see results in tabular format (replace @csv with @tsv), you can run this:
@@ -364,7 +529,8 @@ python3.10 lrtool.py (...) | jq -r '{results} | .[] | [.[]] | (.[1] | keys_unsor
 - ~Option to choose a custom profile in config file~
 - ~Limit to max_workers=80 to avoid exausting current API limit (100)~ (Thanks to Nicholas Comeau)
 - ~Filter by property value, e.g. If `virtual_machine=true`~
-- PS/kill operations: Find if a given process is running, if so, kill it.
+- ~Load info from files... e.g list of device_ids for filter, list of commands or list of processes to find~
+- ~PS/kill operations: Find if a given process is running, if so, kill it~
 - Windows Registry operations
 - User interface using Flask and VMware opensource https://clarity.design
 

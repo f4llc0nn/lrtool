@@ -10,7 +10,6 @@
 # * WARRANTIES OR CONDITIONS OF MERCHANTABILITY, SATISFACTORY QUALITY,
 # * NON-INFRINGEMENT AND FITNESS FOR A PARTICULAR PURPOSE.
 
-import string
 from mergedeep import merge
 import json, hashlib, random, base64, re, sys
 import concurrent.futures
@@ -87,25 +86,13 @@ def updateConfigFile(api, device, commands, lock, isDaemon=False):
         lr_session.close()
     return device_out
    
-def massUpdateConfig(devicelist, configvalue, customprofile="default", isDaemon=False):
-    now = datetime.utcnow()
-    delta = timedelta(minutes=10)
-
+def massUpdateConfigLR(devicelist, configvalue, isDaemon=False, customprofile="default"):
     out = {}
     future_returns = []
     m = Manager()
     lock = m.Lock()
-    platform_api = CBCloudAPI(profile=customprofile)
     online_devices_old = []
     online_devices_new = []
-
-    for device in devicelist:
-        out[device.id] = {}
-        if now - datetime.strptime(device.last_contact_time, FORMAT) >= delta:
-            out[device.id]["live_response"] = "OFFLINE"
-        else:
-            version = float(device.sensor_version.split(".")[0] + "." + d.sensor_version.split(".")[1])
-            online_devices_new.append(device) if version >= 3.6 else online_devices_old.append(device)
 
     backupfilename = r'cfg-bkp-%s.ini' %hashlib.md5(str(random.randrange(100000,999999)).encode()).hexdigest()
     cfgdir_new = r'C:\ProgramData\CarbonBlack\DataFiles' 
@@ -132,17 +119,23 @@ def massUpdateConfig(devicelist, configvalue, customprofile="default", isDaemon=
         r'powershell.exe Get-Content %s\cfg.ini | Select-String -Pattern %s -quiet' % (cfgdir_old, configvalue)
     ]
 
+    for device in devicelist:
+        out[device.id] = {}
+        version = float(device.sensor_version.split(".")[0] + "." + d.sensor_version.split(".")[1])
+        online_devices_new.append(device) if version >= 3.6 else online_devices_old.append(device)
+
     if not isDaemon:
         print("{0:10} {1:30} {2:10}".format("ID", "Hostname", "Cfg Update"))
+    api = CBCloudAPI(profile=customprofile)
     with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
         for device in online_devices_new:
             try:
-                future_returns.append(executor.submit(updateConfigFile,platform_api, device, cmds_new, lock, isDaemon))
+                future_returns.append(executor.submit(updateConfigFile, api, device, cmds_new, lock, isDaemon))
             except:
                 out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
         for device in online_devices_old:
             try:
-                future_returns.append(executor.submit(updateConfigFile,platform_api, device, cmds_old, lock, isDaemon))
+                future_returns.append(executor.submit(updateConfigFile, api, device, cmds_old, lock, isDaemon))
             except:
                 out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
 
@@ -150,39 +143,99 @@ def massUpdateConfig(devicelist, configvalue, customprofile="default", isDaemon=
         out.update(f.result())
     return out
 
-def executeLRCommands(api, device, commands, lock, isDaemon=False):
-    lr_session = api.live_response.request_session(device.id)
+def executeLR(api, device, commands, lock, wait=True, isDaemon=False):
     device_out = { device.id: { "live_response": {} } }
     count = 0
-
     with api.live_response.request_session(device.id) as lr_session:
         for command in commands:
-            cmd_output = lr_session.create_process(r'%s' %command, wait_for_output=True)
-            device_out[device.id]["live_response"][count] = { base64.b64encode(command.encode('ascii')).decode('ascii'): 
-                base64.b64encode(cmd_output).decode('ascii')
-            }
+            cmd_output = lr_session.create_process(r'%s' %command, wait_for_output=wait, wait_for_completion=wait)
+            if wait:
+                device_out[device.id]["live_response"][count] = { 
+                    base64.b64encode(command.encode('ascii')).decode('ascii'): base64.b64encode(cmd_output).decode('ascii')
+                }
+            else:
+                device_out[device.id]["live_response"][count] = { 
+                    base64.b64encode(command.encode('ascii')).decode('ascii'): "RUNNING_ON_BACKGROUND"
+                }
             count += 1
             if not isDaemon:
                 lock.acquire()
                 try:
-                    print(r'%s|%s ❯ %s' % (device.id, device.name, command) +'\n'+cmd_output.decode('ascii'))
+                    if wait:
+                        print(r'%s|%s ❯ %s' % (device.id, device.name, command) +'\n'+cmd_output.decode('ascii'))
+                    else:
+                        print(r'%s|%s ❯ "%s": %s' % (device.id, device.name, command, "RUNNING_ON_BACKGROUND"))
                 finally:
                     lock.release()
         lr_session.close()
     return device_out
     
-def massExecuteLR(devicelist, commands, customprofile="default", isDaemon=False):
+def massExecuteLR(devicelist, commands, wait=True, isDaemon=False, customprofile="default"):
     out = {}
     future_returns = []
     m = Manager()
     lock = m.Lock()
-    api = CBCloudAPI(profile=customprofile)
 
+    api = CBCloudAPI(profile=customprofile)
     with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
         for device in devicelist:
             out[device.id] = {}
             try:
-                future_returns.append(executor.submit(executeLRCommands, api, device, commands, lock, isDaemon))
+                future_returns.append(executor.submit(executeLR, api, device, commands, lock, wait, isDaemon))
+            except:
+                out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
+
+    for f in future_returns:
+        out.update(f.result())
+    return out
+
+def findAndKillLR(api, device, pnamelist, lock, killIt=False, isDaemon=False):
+    out = { device.id: { "live_response": {"find_processes": {} } } }
+    match_processes = []
+    with api.live_response.request_session(device.id) as lr_session:
+        running_processes = lr_session.list_processes()
+        for pname in pnamelist:
+            out[device.id]["live_response"]["find_processes"][pname] = {"status": "NOT_FOUND", "matches_count": 0, "matches_pid": [], "matches_details": {} }
+            match = False
+            for process in running_processes:
+                if ((pname.lower() in (process["process_path"]).lower()) or (pname.lower() in (process["process_cmdline"]).lower())):
+                    match = True
+                    match_processes.append(process["process_pid"])
+                    out[device.id]["live_response"]["find_processes"][pname]["status"] = "KILLED" if killIt else "FOUND"
+                    out[device.id]["live_response"]["find_processes"][pname]["matches_count"] += 1
+                    out[device.id]["live_response"]["find_processes"][pname]["matches_pid"].append(process["process_pid"])
+                    out[device.id]["live_response"]["find_processes"][pname]["matches_details"][process["process_pid"]] = process
+                    if not isDaemon:
+                        lock.acquire()
+                        try:
+                            print(r'%s|%s ❯ %s: %s (PID: %s)' % (device.id, device.name, "\""+pname+"\"", out[device.id]["live_response"]["find_processes"][pname]["status"], process["process_pid"]))
+                        finally:
+                            lock.release()
+            if not match and not isDaemon:
+                lock.acquire()
+                try:
+                    print(r'%s|%s ❯ %s: %s' % (device.id, device.name, "\""+pname+"\"", out[device.id]["live_response"]["find_processes"][pname]["status"]))
+                finally:
+                    lock.release()
+
+        if killIt and len(match_processes) > 0:
+            for pid in match_processes:
+                lr_session.kill_process(pid)
+        lr_session.close()
+    return out
+
+def massFindAndKillLR(devicelist, pnamelist, kill=False, isDaemon=False, customprofile="default"):
+    out = {}
+    future_returns = []
+    m = Manager()
+    lock = m.Lock()
+
+    api = CBCloudAPI(profile=customprofile)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
+        for device in devicelist:
+            out[device.id] = {}
+            try:
+                future_returns.append(executor.submit(findAndKillLR, api, device, pnamelist, lock, killIt=kill, isDaemon=isDaemon))
             except:
                 out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
 
@@ -192,17 +245,19 @@ def massExecuteLR(devicelist, commands, customprofile="default", isDaemon=False)
 
 if __name__ == "__main__":
     parser = build_cli_parser("List devices")
-    parser.add_argument("-n", "--hostname", help="Query string for looking for device names")
-    parser.add_argument("-p", "--policy", action="append", help="Policy Name")
-    parser.add_argument("-i", "--device_id", action='append', nargs='+', help="List of device_id's")
-    parser.add_argument("-d", "--deployment_type", action="append", help="Deployment Type")
-    parser.add_argument("-s", "--status", action="append", help="Status of device")
+    parser.add_argument("-n", "--hostname", help="Query string looking for device names")
+    parser.add_argument("-p", "--policy", help="Query string looking for policy names")
+    parser.add_argument("-i", "--device_id", action='append', nargs='+', help="Send list of fixed device_id's")
     parser.add_argument("-f", "--if_field", action='append', nargs='+', help="If field equals value. e.g. virtual_machine=true")
     parser.add_argument("-a", "--add_field", action='append', nargs='+', help="Add field(s) to output")
     parser.add_argument("-o", "--only_field", action='append', nargs='+', help="Choose the field(s) to output")
+    parser.add_argument("-s", "--simple_output", action='store_true', help="Toggle to only print device_id and device_name")
+    parser.add_argument("-F", "--find_process", action='append', nargs='+', help="Find process in selected devices")
+    parser.add_argument("-K", "--kill_process", action='store_true', help="Toggle to kill matched processes. Needs \"-F\"")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
+    parser.add_argument("-P", "--persist_process", action='store_false', help="Toggle to keep running after the session. Needs \"-E\"")
     parser.add_argument("-U", "--update_cfg", help="Update sensor config file")
-    parser.add_argument("-D", "--daemon", action='store_true', help="Daemon mode. JSON output")
+    parser.add_argument("-D", "--daemon", action='store_true', help="Toggle for Daemon mode (JSON output)")
 
     args = parser.parse_args()
     cb = get_cb_cloud_object(args)
@@ -214,19 +269,23 @@ if __name__ == "__main__":
     if args.hostname:
         devicelist = [d for d in devicelist if (args.hostname).lower() in (d.name).lower()]
     if args.policy:
-        devicelist = [d for d in devicelist if (args.policy[0]).lower() in (d.policy_name).lower()]
+        devicelist = [d for d in devicelist if (args.policy).lower() in (d.policy_name).lower()]
     if args.device_id:
-        devicelist = [d for d in devicelist if str(d.id) in flatten(args.device_id)]
-    if args.deployment_type:
-        devicelist = devicelist.set_deployment_type(args.deployment_type)
-    if args.status:
-        devicelist = devicelist.set_status(args.status)
+        if args.device_id[0][0][0] == '@':
+            filename = args.device_id[0][0][1:]
+            d_ids = []
+            with open(filename) as file:
+                while line := file.readline():
+                    d_ids.append(line.rstrip().lower())
+                devicelist = [d for d in devicelist if str(d.id) in d_ids]
+        else:
+            devicelist = [d for d in devicelist if str(d.id) in flatten(args.device_id)]
     if args.if_field:
         filter = flatten(args.if_field)[0]
         if ">=" in filter:
             field, value = filter.split(">=")
             value = sanitizeValue(value)
-            devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and getattr(d, field) >= value)]
+            devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and getattr(d, field.lower()) >= value)]
         elif ">" in filter:
             field, value = filter.split(">")
             value = sanitizeValue(value)
@@ -243,19 +302,20 @@ if __name__ == "__main__":
             field, value = filter.split("~")
             value = sanitizeValue(value)
             if isinstance(value, list) or isinstance(value, str):
-                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.upper() in getattr(d, field))]
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.upper() in getattr(d, field.lower()).upper())]
         elif "=" in filter:
             field, value = filter.split("=")
             value = sanitizeValue(value)
             if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
-                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and getattr(d, field) == value)]
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and getattr(d, field.lower()) == value)]
             elif isinstance(value, str):
-                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.lower() == getattr(d, field).lower())]
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.lower() == getattr(d, field.lower()).lower())]
             elif isinstance(value, list):
-                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.upper() in getattr(d, field))]
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.upper() in getattr(d, field.lower()).upper())]
         else:
             devicelist = []
 
+    hasExecutors = (args.execute or args.update_cfg or args.find_process)
     # Initiate JSON output:
     online_devices = []
     if devicelist:
@@ -264,7 +324,7 @@ if __name__ == "__main__":
                 "device_id": d.id, 
                 "device_name": d.name,
             }
-            if not args.only_field:
+            if not args.only_field or not args.simple_output:
                 output[d.id].update({
                     "last_contact_time": d.last_contact_time,
                     "os": d.os, 
@@ -284,7 +344,7 @@ if __name__ == "__main__":
                     "deployment_type": d.deployment_type,
                     "uninstall_code": d.uninstall_code,
                 })
-            if args.execute or args.update_cfg:
+            if hasExecutors:
                 now = datetime.utcnow()
                 delta = timedelta(minutes=10)
                 if now - datetime.strptime(d.last_contact_time, FORMAT) >= delta:
@@ -300,15 +360,42 @@ if __name__ == "__main__":
         fields = flatten(args.add_field) if args.add_field else flatten(args.only_field)
         for d in devicelist:
             for field in fields:
-                output[d.id].update({ field: getattr(d, field) }) if hasattr(d, field) else None
+                output[d.id].update({ field: getattr(d, field.lower()).lower() }) if hasattr(d, field.lower()) else None
+
+    if args.device_id:
+        if args.device_id[0][0][0] == '@':
+            filename = args.device_id[0][0][1:]
+            d_ids = []
+            with open(filename) as file:
+                while line := file.readline():
+                    d_ids.append(line.rstrip().lower())
+                devicelist = [d for d in devicelist if str(d.id).lower() in d_ids]
 
     # Executors:
-    if args.execute or args.update_cfg:
+    if hasExecutors:
         if args.execute:
-            merge(output, massExecuteLR(online_devices, flatten(args.execute), args.profile, args.daemon).copy())
+            if args.execute[0][0][0] == '@':
+                filename = args.execute[0][0][1:]
+                commands = []
+                with open(filename) as file:
+                    while line := file.readline():
+                        commands.append(line.rstrip())
+                merge(output, massExecuteLR(online_devices, commands, args.persist_process, args.daemon, args.profile).copy())
+            else:
+                merge(output, massExecuteLR(online_devices, flatten(args.execute), args.persist_process, args.daemon, args.profile).copy())
+        elif args.find_process:
+            if args.find_process[0][0][0] == '@':
+                filename = args.find_process[0][0][1:]
+                processes = []
+                with open(filename) as file:
+                    while line := file.readline():
+                        processes.append(line.rstrip())
+                merge(output, massFindAndKillLR(online_devices, processes, args.kill_process, args.daemon, args.profile).copy())
+            else:
+                merge(output, massFindAndKillLR(online_devices, flatten(args.find_process), args.kill_process, args.daemon, args.profile).copy())
         elif args.update_cfg and sanitizeUpdateCfg(args.update_cfg):
-            merge(output, massUpdateConfig(online_devices, args.update_cfg, args.profile, args.daemon).copy())
+            merge(output, massUpdateConfigLR(online_devices, args.update_cfg, args.daemon, args.profile).copy())
 
     # If not command-line execution or is Daemon, print JSON output:
-    if devicelist and args.daemon or (not args.execute and not args.update_cfg):
+    if devicelist and args.daemon or not hasExecutors:
         print(json.dumps({"device_count": len(output), "results": output}, indent=2, sort_keys=False))
