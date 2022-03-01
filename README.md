@@ -18,9 +18,14 @@ python3.10 -m pip install carbon-black-cloud-sdk
 ```
 
 ## Install
+### Latest (ongoing, not extensively tested)
 ```
 git clone https://github.com/0xleone/lrtool
 cd lrtool
+```
+### Stable (tested in multiple scenarios)
+```
+Go to RELEASES page.
 ```
 
 ## Edit the credentials file
@@ -68,6 +73,8 @@ S.M.: Support Multiple Ocurrences
 | `-a`  | add selected field to output   |  X  |  X  |
 | `-o`  | only output selected field     |  X  |  X  |
 | `-s`  | toggle for simpler output      |     |     |
+| `-t`  | minutes of last connection     |     |     |
+| `-w`  | max number of thread workers   |     |     |
 | `-F`  | find process across devices    |  X  |  X  |
 | `-K`  | toggle to kill -F processes    |     |     |
 | `-E`  | command to run on devices      |     |  X  |
@@ -524,13 +531,6 @@ python3.10 lrtool.py (...) | jq -r '{results} | .[] | [.[]] | (.[1] | keys_unsor
 ```
 
 ## TODO 
-- ~Simplify/remove unused options like SORT BY and REVERSE~
-- ~Add a "device_count" field~
-- ~Option to choose a custom profile in config file~
-- ~Limit to max_workers=80 to avoid exausting current API limit (100)~ (Thanks to Nicholas Comeau)
-- ~Filter by property value, e.g. If `virtual_machine=true`~
-- ~Load info from files... e.g list of device_ids for filter, list of commands or list of processes to find~
-- ~PS/kill operations: Find if a given process is running, if so, kill it~
 - Windows Registry operations
 - User interface using Flask and VMware opensource https://clarity.design
 

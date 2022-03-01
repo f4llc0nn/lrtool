@@ -13,7 +13,6 @@
 from mergedeep import merge
 import json, hashlib, random, base64, re, sys
 import concurrent.futures
-from multiprocessing import Manager
 from cbc_sdk.helpers import build_cli_parser, get_cb_cloud_object
 from cbc_sdk.platform import Device
 from cbc_sdk import CBCloudAPI
@@ -65,7 +64,101 @@ def sanitizeUpdateCfg(keyvalue):
     else:
         return False
 
-def updateConfigFile(api, device, commands, lock, isDaemon=False):
+def executeLR(api, device, commands, wait=True, isDaemon=False):
+    with api.live_response.request_session(device.id) as lr_session:
+        device_out = { device.id: { "live_response": {} } }
+        count = 0
+        for command in commands:
+            cmd_output = lr_session.create_process(r'%s' %command, wait_for_output=wait, wait_for_completion=wait)
+            if wait:
+                device_out[device.id]["live_response"][count] = { 
+                    base64.b64encode(command.encode('ascii')).decode('ascii'): base64.b64encode(cmd_output).decode('ascii')
+                }
+            else:
+                device_out[device.id]["live_response"][count] = { 
+                    base64.b64encode(command.encode('ascii')).decode('ascii'): "RUNNING_ON_BACKGROUND"
+                }
+            count += 1
+            if not isDaemon:
+                if wait:
+                    print(r'%s|%s ❯ %s' % (device.id, device.name, command) +'\n'+cmd_output.decode('ascii'))
+                else:
+                    print(r'%s|%s ❯ "%s": %s' % (device.id, device.name, command, "RUNNING_ON_BACKGROUND"))
+        lr_session.close()
+    if device_out:
+        return device_out
+    else:
+        return { device.id: { "live_response": "CONN_FAILED_OR_TIMEOUT" } }
+    
+def massExecuteLR(devicelist, commands, wait=True, isDaemon=False, workers=80, customprofile="default"):
+    out = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = []
+        counter = 0
+        api = CBCloudAPI(profile=customprofile)
+        for device in devicelist:
+            out[device.id] = {}
+            try:
+                futures.append(executor.submit(executeLR, api, device, commands, wait, isDaemon))
+                counter += 1
+            except:
+                out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
+
+    for f in concurrent.futures.as_completed(futures, timeout=10):
+        if f.exception() is None:
+            out.update(f.result())
+        else:
+            out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
+    return out
+
+def findAndKillLR(api, device, pnamelist, killIt=False, isDaemon=False):
+    out = { device.id: { "live_response": {"find_processes": {} } } }
+    with api.live_response.request_session(device.id) as lr_session:
+        match_processes = []
+        running_processes = lr_session.list_processes()
+        for pname in pnamelist:
+            out[device.id]["live_response"]["find_processes"][pname] = {"status": "NOT_FOUND", "matches_count": 0, "matches_pid": [], "matches_details": {} }
+            match = False
+            for process in running_processes:
+                if ((pname.lower() in (process["process_path"]).lower()) or (pname.lower() in (process["process_cmdline"]).lower())):
+                    match = True
+                    match_processes.append(process["process_pid"])
+                    out[device.id]["live_response"]["find_processes"][pname]["status"] = "KILLED" if killIt else "FOUND"
+                    out[device.id]["live_response"]["find_processes"][pname]["matches_count"] += 1
+                    out[device.id]["live_response"]["find_processes"][pname]["matches_pid"].append(process["process_pid"])
+                    out[device.id]["live_response"]["find_processes"][pname]["matches_details"][process["process_pid"]] = process
+                    if not isDaemon:
+                        print(r'%s|%s ❯ %s: %s (PID: %s)' % (device.id, device.name, "\""+pname+"\"", out[device.id]["live_response"]["find_processes"][pname]["status"], process["process_pid"]))
+            if not match and not isDaemon:
+                print(r'%s|%s ❯ %s: %s' % (device.id, device.name, "\""+pname+"\"", out[device.id]["live_response"]["find_processes"][pname]["status"]))
+
+        if killIt and len(match_processes) > 0:
+            for pid in match_processes:
+                lr_session.kill_process(pid)
+        lr_session.close()
+    return out
+
+def massFindAndKillLR(devicelist, pnamelist, kill=False, isDaemon=False, workers=80, customprofile="default"):
+    out = {}
+    futures = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        api = CBCloudAPI(profile=customprofile)
+        for device in devicelist:
+            out[device.id] = {}
+            try:
+                futures.append(executor.submit(findAndKillLR, api, device, pnamelist, killIt=kill, isDaemon=isDaemon))
+            except:
+                out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
+
+    for f in concurrent.futures.as_completed(futures, timeout=20):
+        if f.exception() is None:
+            out.update(f.result())
+        else:
+            out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
+    return out
+
+
+def updateConfigFile(api, device, commands, isDaemon=False):
     device_out = { device.id: { "live_response": {} } }
     device_out[device.id]["live_response"]["config_update"] = False
     with api.live_response.request_session(device.id) as lr_session:
@@ -77,20 +170,15 @@ def updateConfigFile(api, device, commands, lock, isDaemon=False):
                 cmd_output = lr_session.create_process(r'%s' %command, wait_for_completion=True, wait_for_output=True).decode('ascii')
                 device_out[device.id]["live_response"]["config_update"] = True if "True" in cmd_output else False
                 if not isDaemon:
-                    lock.acquire()
-                    try:
-                        cmd_return = "Success" if "True" in cmd_output else "Fail"
-                        print("{0:10s} {1:30s} {2:10s}".format(str(device.id), device.name, cmd_return))
-                    finally:
-                        lock.release()
+                    cmd_return = "Success" if "True" in cmd_output else "Fail"
+                    print("{0:10s} {1:30s} {2:10s}".format(str(device.id), device.name, cmd_return))
         lr_session.close()
+
     return device_out
    
-def massUpdateConfigLR(devicelist, configvalue, isDaemon=False, customprofile="default"):
+def massUpdateConfigLR(devicelist, configvalue, isDaemon=False, workers=80, customprofile="default"):
     out = {}
-    future_returns = []
-    m = Manager()
-    lock = m.Lock()
+    futures = []
     online_devices_old = []
     online_devices_new = []
 
@@ -121,130 +209,33 @@ def massUpdateConfigLR(devicelist, configvalue, isDaemon=False, customprofile="d
 
     for device in devicelist:
         out[device.id] = {}
-        version = float(device.sensor_version.split(".")[0] + "." + d.sensor_version.split(".")[1])
+        version = float(device.sensor_version.split(".")[0] + "." + device.sensor_version.split(".")[1])
         online_devices_new.append(device) if version >= 3.6 else online_devices_old.append(device)
 
-    if not isDaemon:
-        print("{0:10} {1:30} {2:10}".format("ID", "Hostname", "Cfg Update"))
-    api = CBCloudAPI(profile=customprofile)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        if not isDaemon:
+            print("{0:10} {1:30} {2:10}".format("ID", "Hostname", "Cfg Update"))
+        api = CBCloudAPI(profile=customprofile)
         for device in online_devices_new:
             try:
-                future_returns.append(executor.submit(updateConfigFile, api, device, cmds_new, lock, isDaemon))
+                futures.append(executor.submit(updateConfigFile, api, device, cmds_new, isDaemon))
             except:
                 out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
         for device in online_devices_old:
             try:
-                future_returns.append(executor.submit(updateConfigFile, api, device, cmds_old, lock, isDaemon))
+                futures.append(executor.submit(updateConfigFile, api, device, cmds_old, isDaemon))
             except:
                 out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
 
-    for f in future_returns:
-        out.update(f.result())
+    for f in concurrent.futures.as_completed(futures, timeout=40):
+        if f.exception() is None:
+            out.update(f.result())
+        else:
+            out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
     return out
 
-def executeLR(api, device, commands, lock, wait=True, isDaemon=False):
-    device_out = { device.id: { "live_response": {} } }
-    count = 0
-    with api.live_response.request_session(device.id) as lr_session:
-        for command in commands:
-            cmd_output = lr_session.create_process(r'%s' %command, wait_for_output=wait, wait_for_completion=wait)
-            if wait:
-                device_out[device.id]["live_response"][count] = { 
-                    base64.b64encode(command.encode('ascii')).decode('ascii'): base64.b64encode(cmd_output).decode('ascii')
-                }
-            else:
-                device_out[device.id]["live_response"][count] = { 
-                    base64.b64encode(command.encode('ascii')).decode('ascii'): "RUNNING_ON_BACKGROUND"
-                }
-            count += 1
-            if not isDaemon:
-                lock.acquire()
-                try:
-                    if wait:
-                        print(r'%s|%s ❯ %s' % (device.id, device.name, command) +'\n'+cmd_output.decode('ascii'))
-                    else:
-                        print(r'%s|%s ❯ "%s": %s' % (device.id, device.name, command, "RUNNING_ON_BACKGROUND"))
-                finally:
-                    lock.release()
-        lr_session.close()
-    return device_out
-    
-def massExecuteLR(devicelist, commands, wait=True, isDaemon=False, customprofile="default"):
-    out = {}
-    future_returns = []
-    m = Manager()
-    lock = m.Lock()
-
-    api = CBCloudAPI(profile=customprofile)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
-        for device in devicelist:
-            out[device.id] = {}
-            try:
-                future_returns.append(executor.submit(executeLR, api, device, commands, lock, wait, isDaemon))
-            except:
-                out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
-
-    for f in future_returns:
-        out.update(f.result())
-    return out
-
-def findAndKillLR(api, device, pnamelist, lock, killIt=False, isDaemon=False):
-    out = { device.id: { "live_response": {"find_processes": {} } } }
-    match_processes = []
-    with api.live_response.request_session(device.id) as lr_session:
-        running_processes = lr_session.list_processes()
-        for pname in pnamelist:
-            out[device.id]["live_response"]["find_processes"][pname] = {"status": "NOT_FOUND", "matches_count": 0, "matches_pid": [], "matches_details": {} }
-            match = False
-            for process in running_processes:
-                if ((pname.lower() in (process["process_path"]).lower()) or (pname.lower() in (process["process_cmdline"]).lower())):
-                    match = True
-                    match_processes.append(process["process_pid"])
-                    out[device.id]["live_response"]["find_processes"][pname]["status"] = "KILLED" if killIt else "FOUND"
-                    out[device.id]["live_response"]["find_processes"][pname]["matches_count"] += 1
-                    out[device.id]["live_response"]["find_processes"][pname]["matches_pid"].append(process["process_pid"])
-                    out[device.id]["live_response"]["find_processes"][pname]["matches_details"][process["process_pid"]] = process
-                    if not isDaemon:
-                        lock.acquire()
-                        try:
-                            print(r'%s|%s ❯ %s: %s (PID: %s)' % (device.id, device.name, "\""+pname+"\"", out[device.id]["live_response"]["find_processes"][pname]["status"], process["process_pid"]))
-                        finally:
-                            lock.release()
-            if not match and not isDaemon:
-                lock.acquire()
-                try:
-                    print(r'%s|%s ❯ %s: %s' % (device.id, device.name, "\""+pname+"\"", out[device.id]["live_response"]["find_processes"][pname]["status"]))
-                finally:
-                    lock.release()
-
-        if killIt and len(match_processes) > 0:
-            for pid in match_processes:
-                lr_session.kill_process(pid)
-        lr_session.close()
-    return out
-
-def massFindAndKillLR(devicelist, pnamelist, kill=False, isDaemon=False, customprofile="default"):
-    out = {}
-    future_returns = []
-    m = Manager()
-    lock = m.Lock()
-
-    api = CBCloudAPI(profile=customprofile)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
-        for device in devicelist:
-            out[device.id] = {}
-            try:
-                future_returns.append(executor.submit(findAndKillLR, api, device, pnamelist, lock, killIt=kill, isDaemon=isDaemon))
-            except:
-                out[device.id]["live_response"] = "CONN_FAILED_OR_TIMEOUT"
-
-    for f in future_returns:
-        out.update(f.result())
-    return out
-
-if __name__ == "__main__":
-    parser = build_cli_parser("List devices")
+def main():
+    parser = build_cli_parser("List Devices and Mass Live Response")
     parser.add_argument("-n", "--hostname", help="Query string looking for device names")
     parser.add_argument("-p", "--policy", help="Query string looking for policy names")
     parser.add_argument("-i", "--device_id", action='append', nargs='+', help="Send list of fixed device_id's")
@@ -252,6 +243,8 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--add_field", action='append', nargs='+', help="Add field(s) to output")
     parser.add_argument("-o", "--only_field", action='append', nargs='+', help="Choose the field(s) to output")
     parser.add_argument("-s", "--simple_output", action='store_true', help="Toggle to only print device_id and device_name")
+    parser.add_argument("-t", "--last_connection_timeout", type=int, help="Last Connection tolerated in minutes. Default: 10")
+    parser.add_argument("-w", "--workers", type=int, default=80, help="Number of parallel workers (max and default: 80)")
     parser.add_argument("-F", "--find_process", action='append', nargs='+', help="Find process in selected devices")
     parser.add_argument("-K", "--kill_process", action='store_true', help="Toggle to kill matched processes. Needs \"-F\"")
     parser.add_argument("-E", "--execute", action='append', nargs='+', help="Commands to execute on all filtered devices")
@@ -303,6 +296,15 @@ if __name__ == "__main__":
             value = sanitizeValue(value)
             if isinstance(value, list) or isinstance(value, str):
                 devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.upper() in getattr(d, field.lower()).upper())]
+        elif "!=" in filter:
+            field, value = filter.split("!=")
+            value = sanitizeValue(value)
+            if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and getattr(d, field.lower()) != value)]
+            elif isinstance(value, str):
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.lower() != getattr(d, field.lower()).lower())]
+            elif isinstance(value, list):
+                devicelist = [d for d in devicelist if (hasattr(d, field.lower()) and value.upper() not in getattr(d, field.lower()).upper())]
         elif "=" in filter:
             field, value = filter.split("=")
             value = sanitizeValue(value)
@@ -324,7 +326,7 @@ if __name__ == "__main__":
                 "device_id": d.id, 
                 "device_name": d.name,
             }
-            if not args.only_field or not args.simple_output:
+            if not (args.only_field or args.simple_output):
                 output[d.id].update({
                     "last_contact_time": d.last_contact_time,
                     "os": d.os, 
@@ -344,11 +346,15 @@ if __name__ == "__main__":
                     "deployment_type": d.deployment_type,
                     "uninstall_code": d.uninstall_code,
                 })
-            if hasExecutors:
+            if hasExecutors or args.last_connection_timeout:
+                timeout = args.last_connection_timeout if args.last_connection_timeout else 10
                 now = datetime.utcnow()
-                delta = timedelta(minutes=10)
-                if now - datetime.strptime(d.last_contact_time, FORMAT) >= delta:
-                    output[d.id]["live_response"] = "OFFLINE"
+                delta = timedelta(minutes=timeout)
+                if (now - datetime.strptime(d.last_contact_time, FORMAT) >= delta):
+                    if hasExecutors:
+                        output[d.id]["live_response"] = "OFFLINE"
+                    elif args.last_connection_timeout and not hasExecutors:
+                        del output[d.id]
                 else:
                     online_devices.append(d)
     else:
@@ -360,7 +366,7 @@ if __name__ == "__main__":
         fields = flatten(args.add_field) if args.add_field else flatten(args.only_field)
         for d in devicelist:
             for field in fields:
-                output[d.id].update({ field: getattr(d, field.lower()).lower() }) if hasattr(d, field.lower()) else None
+                output[d.id].update({ field: getattr(d, field.lower()) }) if hasattr(d, field.lower()) else None
 
     if args.device_id:
         if args.device_id[0][0][0] == '@':
@@ -380,9 +386,9 @@ if __name__ == "__main__":
                 with open(filename) as file:
                     while line := file.readline():
                         commands.append(line.rstrip())
-                merge(output, massExecuteLR(online_devices, commands, args.persist_process, args.daemon, args.profile).copy())
+                merge(output, massExecuteLR(online_devices, commands, args.persist_process, args.daemon, args.workers, args.profile).copy())
             else:
-                merge(output, massExecuteLR(online_devices, flatten(args.execute), args.persist_process, args.daemon, args.profile).copy())
+                merge(output, massExecuteLR(online_devices, flatten(args.execute), args.persist_process, args.daemon, args.workers, args.profile).copy())
         elif args.find_process:
             if args.find_process[0][0][0] == '@':
                 filename = args.find_process[0][0][1:]
@@ -390,12 +396,15 @@ if __name__ == "__main__":
                 with open(filename) as file:
                     while line := file.readline():
                         processes.append(line.rstrip())
-                merge(output, massFindAndKillLR(online_devices, processes, args.kill_process, args.daemon, args.profile).copy())
+                merge(output, massFindAndKillLR(online_devices, processes, args.kill_process, args.daemon, args.workers, args.profile).copy())
             else:
-                merge(output, massFindAndKillLR(online_devices, flatten(args.find_process), args.kill_process, args.daemon, args.profile).copy())
+                merge(output, massFindAndKillLR(online_devices, flatten(args.find_process), args.kill_process, args.daemon, args.workers, args.profile).copy())
         elif args.update_cfg and sanitizeUpdateCfg(args.update_cfg):
-            merge(output, massUpdateConfigLR(online_devices, args.update_cfg, args.daemon, args.profile).copy())
+            merge(output, massUpdateConfigLR(online_devices, args.update_cfg, args.daemon, args.workers, args.profile).copy())
 
     # If not command-line execution or is Daemon, print JSON output:
-    if devicelist and args.daemon or not hasExecutors:
+    if devicelist and (args.daemon or not hasExecutors):
         print(json.dumps({"device_count": len(output), "results": output}, indent=2, sort_keys=False))
+
+if __name__ == "__main__":
+    main()
