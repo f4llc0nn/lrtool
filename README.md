@@ -64,23 +64,31 @@ C.I.: Case Insensitive
 S.M.: Support Multiple Ocurrences
 ```
 
-| Param |          Description           | C.I | S.M |
-| ----- | ------------------------------ | --- | --- |
-| `-n`  | device_name or part of         |  X  |     |
-| `-p`  | policy_name or part of         |  X  |     |
-| `-i`  | device with provided device_id |     |  X  |
-| `-f`  | match devices if field=value   |  X  |  X  |
-| `-a`  | add selected field to output   |  X  |  X  |
-| `-o`  | only output selected field     |  X  |  X  |
-| `-s`  | toggle for simpler output      |     |     |
-| `-t`  | minutes of last connection     |     |     |
-| `-w`  | max number of thread workers   |     |     |
-| `-F`  | find process across devices    |  X  |  X  |
-| `-K`  | toggle to kill -F processes    |     |     |
-| `-E`  | command to run on devices      |     |  X  |
-| `-P`  | toggle to persist -E processes |     |     |
-| `-U`  | update sensor cfg file         |     |     |
-| `-D`  | toggle to print output in JSON |     |     |
+| Param |             Description            | C.I | S.M |
+| :--:  | ---------------------------------- | :-: | :-: |
+| `-n`  | device_name or part of             |  X  |     |
+| `-p`  | policy_name or part of             |  X  |     |
+| `-i`  | device with provided device_id     |     |  X  |
+| `-f`  | if field (=,!=,>,>=,<,<=) value    |  X  |  X  |
+| `-a`  | add selected field to output       |  X  |  X  |
+| `-o`  | only output selected field         |  X  |  X  |
+| `-s`  | toggle for simpler output          |     |     |
+| `-t`  | max min. from last connection      |     |     |
+| `-w`  | max number of thread workers       |     |     |
+| `-d`  | toggle to print output in JSON     |     |     |
+| `-P`  | find process across devices        |  X  |  X  |
+| `-K`  | toggle to kill -P processes        |     |     |
+| `-E`  | command to run on devices          |     |  X  |
+| `-N`  | toggle to "nohup" -E processes     |     |     |
+| `-U`  | update sensor cfg file             |     |     |
+| `-l`  | List request directory             |     |     |
+| `-r`  | List request regkey                |     |     |
+|`--file_print`| Print File                  |     |     |
+|`--file_upload`| Upload File into devices   |     |     |
+|`--file_del`| Delete Files                  |     |  X  |
+|`--reg_get`| Print Regkey                   |     |     |
+|`--reg_set`| Set/Update Regkey              |     |     |
+|`--reg_del`| Delete Regkey                  |     |  X  |
 
 
 ## Sample Filters
@@ -335,6 +343,25 @@ python3.10 lrtool.py -n Machine -p Standard -a virtual_machine
 ```
 </details>
 <details>
+  <summary>Simple output. Can be used alongside multiple `-a`:</summary>
+
+```
+python3.10 lrtool.py -n Machine -p Standard -sa virtual_machine os  # Same as "-s -a"
+
+{
+  "device_count": 1,
+  "results": {
+    "11111111": {
+      "device_id": 11111111,
+      "device_name": "DOMAIN\\Machine01",
+      "virtual_machine": true,
+      "os": "WINDOWS"
+    }
+  }
+}
+```
+</details>
+<details>
   <summary>Select fields to output (`device_id` and `device_name` will always show up):</summary>
 
 ```
@@ -379,8 +406,8 @@ world
   <summary>Execute and keep it running in background:</summary>
 
 ```
-python3.10 lrtool.py -p Standard -PE "cmd.exe /c ping 1.1.1.1 -t"
-11111111|DOMAIN\Machine01 ❯ "cmd.exe /c ping 1.1.1.1 -t": RUNNING_ON_BACKGROUND
+python3.10 lrtool.py -p Standard -NE "cmd.exe /c ping 1.1.1.1 -t"
+11111111|DOMAIN\Machine01 ❯ "cmd.exe /c ping 1.1.1.1 -t" ❯ RUNNING_ON_BACKGROUND
 ```
 </details>
 
@@ -390,14 +417,14 @@ python3.10 lrtool.py -p Standard -PE "cmd.exe /c ping 1.1.1.1 -t"
   <summary>Find all devices that have "ping" in a process_name or process_path:</summary>
 
 ```
-python3.10 lrtool.py -p Standard -PE "cmd.exe /c ping 1.1.1.1 -t"
-11111111|DOMAIN\Machine01 ❯ "cmd.exe /c ping 1.1.1.1 -t": RUNNING_ON_BACKGROUND
+python3.10 lrtool.py -p Standard -NE "cmd.exe /c ping 1.1.1.1 -t"
+11111111|DOMAIN\Machine01 ❯ "cmd.exe /c ping 1.1.1.1 -t" ❯ RUNNING_ON_BACKGROUND
 
-python3.10 lrtool.py -p Standard -F "ping"
-11111111|DOMAIN\Machine01 ❯ "ping": FOUND (PID: 7680)
-11111111|DOMAIN\Machine01 ❯ "ping": FOUND (PID: 1408)
+python3.10 lrtool.py -p Standard -P "ping"
+11111111|DOMAIN\Machine01 ❯ "ping" ❯ FOUND (PID: 7680)
+11111111|DOMAIN\Machine01 ❯ "ping" ❯ FOUND (PID: 1408)
 
-python3.10 lrtool.py -p Standard -DsF "ping"
+python3.10 lrtool.py -p Standard -sDP "ping"
 {
   "device_count": 1,
   "results": {
@@ -442,9 +469,9 @@ python3.10 lrtool.py -p Standard -DsF "ping"
   }
 }
 
-python3.10 lrtool.py -p Standard -KF "ping"
-11111111|DOMAIN\Machine01 ❯ "ping": KILLED (PID: 7680)
-11111111|DOMAIN\Machine01 ❯ "ping": KILLED (PID: 1408)
+python3.10 lrtool.py -p Standard -KP "ping"
+11111111|DOMAIN\Machine01 ❯ "ping" ❯ KILLED (PID: 7680)
+11111111|DOMAIN\Machine01 ❯ "ping" ❯ KILLED (PID: 1408)
 ```
 </details>
 
@@ -459,7 +486,7 @@ Also, for safety reasons only the following options are accepted by this script 
   <summary>Option A) Regular output:</summary>
 
 ```
-python3.10 lrtool.py -n Machine -o virtual_machine -U "AuthenticatedCLIUsers=S-1-5-32-544"
+python3.10 lrtool.py -n Machine -U "AuthenticatedCLIUsers=S-1-5-32-544"
 
 ID         Hostname                       Cfg Update
 11111111   DOMAIN\\Machine01              Success   
@@ -470,7 +497,7 @@ ID         Hostname                       Cfg Update
   <summary>Option B) JSON output:</summary>
 
 ```
-python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -U "AuthenticatedCLIUsers=S-1-5-32-544" -D
+python3.10 lrtool.py -n Machine -p Standard -sDU "AuthenticatedCLIUsers=S-1-5-32-544"
 
 {
   "device_count": 1,
@@ -478,7 +505,6 @@ python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -U "Authenticated
     "11111111": {
       "device_id": 11111111,
       "device_name": "DOMAIN\\Machine01",
-      "virtual_machine": true,
       "live_response": {
         "config_update": true
       }
@@ -493,7 +519,7 @@ python3.10 lrtool.py -n Machine -p Standard -o virtual_machine -U "Authenticated
   <summary>Combine Toggle options:</summary>
 
 ```
-python3.10 lrtool.py -Dp Standard -o policy_id policy_name
+python3.10 lrtool.py -Dp Standard -o virtual_machine os
 
 {
   "device_count": 1,
@@ -501,7 +527,8 @@ python3.10 lrtool.py -Dp Standard -o policy_id policy_name
     "11111111": {
       "device_id": 11111111,
       "device_name": "DOMAIN\\Machine01",
-      "virtual_machine": true
+      "virtual_machine": true,
+      "os": "WINDOWS"
     }
   }
 }
@@ -515,7 +542,7 @@ cat "/path/to/file"
 cmd.exe /c echo hello
 cmd.exe /c echo world
   
-python3.10 lrtool.py -o id -E "@/path/to/file"
+python3.10 lrtool.py -E "@/path/to/file"
 11111111|DOMAIN\Machine01 ❯ cmd.exe /c echo hello
 hello
 
